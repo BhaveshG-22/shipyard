@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { Manager } from "socket.io-client";
 import TerminalUI from "../components/terminalUI";
-import WelcomeModal from "../components/WelcomeModal";
+import WelcomeModal from "../components/welcomeModal";
 
 const manager = new Manager(import.meta.env.VITE_API_SERVER_URL);
 const socket = manager.socket("/");
