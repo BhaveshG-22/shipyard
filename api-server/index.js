@@ -1,6 +1,8 @@
 const express = require('express')
 const http = require('http');
 const socketIO = require('socket.io');
+const axios = require('axios');
+
 
 const app = express()
 const server = http.createServer(app);
@@ -124,6 +126,27 @@ app.get('/', (req, res) => {
         </body>
       </html>
     `);
+});
+
+
+app.get('/repo-folders', async (req, res) => {
+    const repoUrl = req.query.repoUrl; // ?repoUrl=https://github.com/BhaveshG-22/shipyard
+    if (!repoUrl) return res.status(400).json({ error: "Missing repoUrl" });
+
+    const repoPath = repoUrl.replace('https://github.com/', '');
+    const [owner, repo] = repoPath.split('/');
+
+    try {
+        const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/contents`);
+        const folders = response.data
+            .filter(item => item.type === 'dir')
+            .map(item => item.name);
+
+        res.json({ folders });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch folders' });
+    }
 });
 
 
