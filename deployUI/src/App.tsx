@@ -9,7 +9,12 @@ import {
   ListEnd,
   Folder,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Github,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 import { Manager } from "socket.io-client";
 import TerminalUI from "../components/terminalUI";
@@ -62,11 +67,15 @@ const App: React.FC = () => {
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [termLogs, setTermLogs] = useState<string[]>([]);
 
-  // New state for repo folders
+  // Repo folders state
   const [repoFolders, setRepoFolders] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [isFetchingFolders, setIsFetchingFolders] = useState<boolean>(false);
   const [showFolderDropdown, setShowFolderDropdown] = useState<boolean>(false);
+  
+  // Error handling state
+  const [folderError, setFolderError] = useState<string>('');
+  const [urlError, setUrlError] = useState<string>('');
 
   useEffect(() => {
     if (deploymentStatus) {
@@ -83,7 +92,6 @@ const App: React.FC = () => {
   type SocketMessage = string | socketMessage;
 
   const api_server = import.meta.env.VITE_API_SERVER_URL;
-  console.log(api_server);
 
   useEffect(() => {
     const handleMessage = (msg: SocketMessage) => {
@@ -133,8 +141,6 @@ const App: React.FC = () => {
   }, [projectSlug]);
 
   useEffect(() => {
-    console.log(`Current Stage ${currentStage}`);
-
     setDeploymentStatus(prev => {
       if (!prev) return null;
       const newStages = prev.stages.map((stage, index) => ({
@@ -159,22 +165,47 @@ const App: React.FC = () => {
     });
   }, [currentStage, deployedLink]);
 
+  // Function to validate GitHub URL
+  const validateGithubUrl = (url: string) => {
+    if (!url) {
+      setUrlError('GitHub URL is required');
+      return false;
+    }
+    
+    const githubRegex = /^https?:\/\/(www\.)?github\.com\/[a-zA-Z0-9-]+\/[a-zA-Z0-9-._]+\/?$/;
+    if (!githubRegex.test(url)) {
+      setUrlError('Please enter a valid GitHub repository URL');
+      return false;
+    }
+    
+    setUrlError('');
+    return true;
+  };
+
   // Function to fetch repository folders
   const fetchRepoFolders = useCallback(async () => {
-    if (!githubUrl.trim()) {
-      alert('Please enter a valid GitHub repository URL');
+    if (!validateGithubUrl(githubUrl)) {
       return;
     }
 
+    setFolderError('');
     setIsFetchingFolders(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_SERVER_URL}/repo-folders?repoUrl=${encodeURIComponent(githubUrl)}`);
+      const response = await fetch(`${api_server}/repo-folders?repoUrl=${encodeURIComponent(githubUrl)}`);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch folders: ${response.status}`);
       }
 
       const data = await response.json();
+      
+      if (!data.folders || data.folders.length === 0) {
+        setFolderError('No folders found in this repository');
+        setRepoFolders([]);
+        setSelectedFolder('');
+        return;
+      }
+      
       setRepoFolders(data.folders || []);
 
       // Set the first folder as default if available
@@ -183,30 +214,44 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching repo folders:', error);
-      alert('Failed to load repository folders. Please check the URL and try again.');
+      setFolderError('Failed to load repository folders. Please check the URL and try again.');
+      setRepoFolders([]);
+      setSelectedFolder('');
     } finally {
       setIsFetchingFolders(false);
     }
-  }, [githubUrl]);
+  }, [githubUrl, api_server]);
 
-  // Fetch folders when GitHub URL changes
+  // Fetch folders when GitHub URL changes and is valid
   useEffect(() => {
-    if (githubUrl.trim()) {
+    if (githubUrl.trim() && validateGithubUrl(githubUrl)) {
       fetchRepoFolders();
     }
   }, [githubUrl, fetchRepoFolders]);
 
+  const handleGithubUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const url = e.target.value;
+    setGithubUrl(url);
+    
+    // Clear error when user starts typing again
+    if (urlError) {
+      setUrlError('');
+    }
+  };
+
   const handleDeploy = useCallback(async () => {
-    if (!githubUrl.trim()) {
-      alert('Please enter a valid GitHub repository URL');
+    // Validate inputs
+    if (!validateGithubUrl(githubUrl)) {
       return;
     }
 
     if (!selectedFolder) {
-      alert('Please select a folder to deploy');
+      setFolderError('Please select a folder to deploy');
       return;
     }
 
+    setFolderError('');
+    setUrlError('');
     setIsLoading(true);
     setDeploymentStatus(createInitialDeploymentStatus());
 
@@ -218,7 +263,7 @@ const App: React.FC = () => {
         },
         body: JSON.stringify({
           gitURL: githubUrl,
-          folder: selectedFolder  // Include the selected folder in the request
+          folder: selectedFolder
         }),
       });
 
@@ -227,157 +272,293 @@ const App: React.FC = () => {
       }
 
       const json = await deployReq.json();
-      console.log("json");
-      console.log(json);
 
       setProjectSlug(json.data.projectSlug);
       setDeployedLink(json.data.url);
 
       socket.emit('subscribe', `logs:${json.data.projectSlug}`);
-      console.log('subscribe request sent');
-
     } catch (error) {
       console.error((error as Error).message);
       setIsLoading(false);
+      setDeploymentStatus(null);
+      alert(`Deployment failed: ${(error as Error).message}`);
     }
   }, [githubUrl, selectedFolder, api_server]);
 
-  return (
-    <div className={`min-h-screen bg-gray-900 flex ${deploymentStatus ? 'items-center' : 'pt-20'} justify-center p-6`}>
-      <div className={`bg-gray-800 rounded-lg shadow-xl ${deploymentStatus ? 'max-w-7xl ' : 'max-w-3xl max-h-full'} w-full p-8 flex flex-col md:flex-row`}>
-        {/* Left Side Form - Deployment UI */}
-        <div className="flex-1 pr-0 md:pr-6">
-          <h1 className="text-3xl font-bold text-white text-center">GitHub Deployment</h1>
+  // Function to get status icon based on deployment stage status
+  const getStatusIcon = (status: string) => {
+    switch(status) {
+      case 'in-progress':
+        return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
+      case 'success':
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'failed':
+        return <AlertCircle className="w-5 h-5 text-red-500" />;
+      default:
+        return <Clock className="w-5 h-5 text-gray-400" />;
+    }
+  };
 
-          {/* GitHub URL Input */}
-          <div className="mt-4">
-            <label className="text-gray-300 text-sm mb-1 block">Repository URL</label>
-            <div className="flex space-x-2">
-              <input
-                type="text"
-                value={githubUrl}
-                onChange={e => setGithubUrl(e.target.value)}
-                placeholder="Enter GitHub Repository URL"
-                className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                disabled={isLoading}
-              />
-              <button
-                onClick={fetchRepoFolders}
-                disabled={!githubUrl || isFetchingFolders}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition disabled:opacity-50 flex items-center"
-              >
-                {isFetchingFolders ? (
-                  <Loader2 className="animate-spin w-4 h-4 mr-1" />
-                ) : (
-                  <GitBranch className="w-4 h-4 mr-1" />
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 flex items-center justify-center p-6">
+      <div className={`bg-gray-800 rounded-xl shadow-2xl border border-gray-700 ${deploymentStatus ? 'max-w-7xl' : 'max-w-3xl'} w-full p-6 md:p-8`}>
+        {/* Header */}
+        <div className="flex items-center justify-center mb-6">
+          <Github className="w-8 h-8 text-blue-400 mr-3" />
+          <h1 className="text-3xl font-bold text-white">GitHub Deployment</h1>
+        </div>
+        
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Left Side Form - Deployment UI */}
+          <div className="flex-1">
+            {/* Configuration Panel */}
+            <div className="bg-gray-750 rounded-lg p-5 border border-gray-700 shadow-lg">
+              <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
+                <GitBranch className="w-5 h-5 mr-2 text-blue-400" />
+                Repository Configuration
+              </h2>
+              
+              {/* GitHub URL Input */}
+              <div className="mb-4">
+                <label className="text-gray-300 text-sm font-medium mb-1.5 block">
+                  Repository URL
+                </label>
+                <div className="flex space-x-2">
+                  <div className="relative flex-1">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Github className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={githubUrl}
+                      onChange={handleGithubUrlChange}
+                      placeholder="https://github.com/username/repo"
+                      className={`w-full pl-10 pr-4 py-3 bg-gray-700 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition ${urlError ? 'border border-red-500' : 'border border-gray-600'}`}
+                      disabled={isLoading}
+                    />
+                  </div>
+                  <button
+                    onClick={fetchRepoFolders}
+                    disabled={!githubUrl || isFetchingFolders || isLoading}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50 flex items-center"
+                    title="Refresh folders"
+                  >
+                    {isFetchingFolders ? (
+                      <Loader2 className="animate-spin w-5 h-5" />
+                    ) : (
+                      <RefreshCw className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+                {urlError && (
+                  <p className="mt-1 text-sm text-red-400">{urlError}</p>
                 )}
-                Fetch
+              </div>
+              
+              {/* Folder Selection Dropdown */}
+              <div className="mb-5">
+                <label className="text-gray-300 text-sm font-medium mb-1.5 block">
+                  Project Folder
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    className={`w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center transition-colors ${folderError ? 'border border-red-500' : 'border border-gray-600'} ${isLoading || repoFolders.length === 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-650'}`}
+                    onClick={() => setShowFolderDropdown(!showFolderDropdown)}
+                    disabled={isLoading || repoFolders.length === 0}
+                  >
+                    <div className="flex items-center">
+                      <Folder className="w-5 h-5 mr-2 text-gray-400" />
+                      {selectedFolder || "Select a folder"}
+                    </div>
+                    {showFolderDropdown ? (
+                      <ChevronUp className="w-5 h-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                    )}
+                  </button>
+                  
+                  {showFolderDropdown && repoFolders.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-gray-700 rounded-lg shadow-xl border border-gray-600 max-h-60 overflow-y-auto">
+                      {repoFolders.map((folder, index) => (
+                        <div
+                          key={index}
+                          className="px-4 py-2.5 hover:bg-gray-600 cursor-pointer flex items-center transition-colors duration-150"
+                          onClick={() => {
+                            setSelectedFolder(folder);
+                            setShowFolderDropdown(false);
+                            setFolderError('');
+                          }}
+                        >
+                          <Folder className="w-4 h-4 mr-2 text-gray-400" />
+                          <span className={selectedFolder === folder ? 'font-medium text-blue-400' : 'text-white'}>
+                            {folder}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {folderError && (
+                  <p className="mt-1 text-sm text-red-400">{folderError}</p>
+                )}
+                
+                {isFetchingFolders && (
+                  <div className="flex items-center mt-2 text-sm text-gray-400">
+                    <Loader2 className="animate-spin w-4 h-4 mr-2" />
+                    <span>Fetching folders...</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Deploy Button */}
+              <button
+                onClick={handleDeploy}
+                disabled={!githubUrl || !selectedFolder || isLoading || !!urlError || !!folderError}
+                className="w-full py-3.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 font-medium flex justify-center items-center shadow-lg"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="animate-spin w-5 h-5 mr-2" />
+                    <span>Deploying...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-5 h-5 mr-2" />
+                    <span>Deploy Project</span>
+                  </>
+                )}
               </button>
             </div>
-          </div>
 
-          {/* Folder Selection Dropdown */}
-          <div className="mt-4">
-            <label className="text-gray-300 text-sm mb-1 block">Project Folder</label>
-            <div className="relative">
-              <button
-                type="button"
-                className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center"
-                onClick={() => setShowFolderDropdown(!showFolderDropdown)}
-                disabled={isLoading || repoFolders.length === 0}
-              >
-                <div className="flex items-center">
-                  <Folder className="w-5 h-5 mr-2 text-gray-400" />
-                  {selectedFolder || "Select a folder"}
+            {/* Deployment Status */}
+            {deploymentStatus && (
+              <div className="mt-6 bg-gray-750 rounded-lg p-5 border border-gray-700 shadow-lg">
+                <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
+                  <Clock className="w-5 h-5 mr-2 text-blue-400" />
+                  Deployment Progress
+                </h2>
+                
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-700 rounded-full h-2.5 mb-6 overflow-hidden">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 ease-in-out" 
+                    style={{ width: `${progress}%` }}
+                  ></div>
                 </div>
-                {showFolderDropdown ? (
-                  <ChevronUp className="w-5 h-5" />
-                ) : (
-                  <ChevronDown className="w-5 h-5" />
-                )}
-              </button>
-
-              {showFolderDropdown && repoFolders.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {repoFolders.map((folder, index) => (
-                    <div
-                      key={index}
-                      className="px-4 py-2 hover:bg-gray-600 cursor-pointer flex items-center"
-                      onClick={() => {
-                        setSelectedFolder(folder);
-                        setShowFolderDropdown(false);
-                      }}
+                
+                {/* Stages */}
+                <div className="space-y-3">
+                  {DEPLOYMENT_STAGES.map((stage, index) => (
+                    <div 
+                      key={stage.name} 
+                      className={`flex items-center justify-between p-3.5 rounded-lg ${
+                        deploymentStatus.stages[index].status === 'in-progress' 
+                          ? 'bg-blue-900/30 border border-blue-700/50' 
+                          : deploymentStatus.stages[index].status === 'success'
+                          ? 'bg-green-900/20 border border-green-700/30' 
+                          : 'bg-gray-800 border border-gray-700'
+                      } transition-colors duration-200`}
                     >
-                      <Folder className="w-4 h-4 mr-2 text-gray-400" />
-                      {folder}
+                      <div className="flex items-center">
+                        <div className="p-2 rounded-md bg-gray-800 mr-3">
+                          <stage.icon className="w-5 h-5 text-gray-300" />
+                        </div>
+                        <div>
+                          <h3 className="text-white font-medium">{stage.name}</h3>
+                          <p className="text-gray-400 text-sm">{stage.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center">
+                        {getStatusIcon(deploymentStatus.stages[index].status)}
+                      </div>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
-          {/* Deploy Button */}
-          <button
-            onClick={handleDeploy}
-            disabled={!githubUrl || !selectedFolder || isLoading}
-            className="w-full py-3 mt-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex justify-center items-center"
-          >
-            {isLoading && <Loader2 className="animate-spin w-5 h-5 mr-2" />}
-            {isLoading ? 'Deploying...' : 'Deploy'}
-          </button>
-
-          {/* Deployment Status */}
+          {/* Right Side - Terminal Logs */}
           {deploymentStatus && (
-            <div className="mt-6 bg-gray-700 p-4 rounded-lg">
-              <h2 className="text-white font-semibold mb-2">Deployment Status</h2>
-              {DEPLOYMENT_STAGES.map((stage, index) => (
-                <div key={stage.name} className="flex items-center space-x-4 p-4 rounded-lg bg-gray-800 mt-2">
-                  <stage.icon className="w-6 h-6 text-white" />
-                  <div className="flex-grow">
-                    <h3 className="text-white font-semibold">{stage.name}</h3>
-                    <p className="text-gray-400 text-sm">{stage.description}</p>
-                  </div>
-                  <span className={`font-bold ${deploymentStatus.stages[index].status === 'in-progress' ? 'text-blue-500' : deploymentStatus.stages[index].status === 'success' ? 'text-green-500' : 'text-gray-400'}`}>
-                    {deploymentStatus.stages[index].status === 'in-progress' ? '🟠 In Progress' : deploymentStatus.stages[index].status === 'success' ? '✅ Completed' : 'Pending'}
-                  </span>
+            <div className="flex-1 h-full">
+              <div className="bg-gray-750 rounded-lg p-5 border border-gray-700 shadow-lg h-full">
+                <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
+                  <Terminal className="w-5 h-5 mr-2 text-blue-400" />
+                  Deployment Logs
+                </h2>
+                <div className="h-96">
+                  <TerminalUI termLogs={termLogs} />
                 </div>
-              ))}
+              </div>
             </div>
           )}
         </div>
-
-        {/* Right Side - Terminal Logs */}
-        {deploymentStatus && (
-          <TerminalUI termLogs={termLogs} />
-        )}
       </div>
 
       {/* Deployment Success Modal */}
       {showModal && deploymentStatus?.status === 'success' && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-gray-800 p-6 rounded-lg shadow-lg text-center w-96">
-            <h2 className="text-xl font-bold text-white">Deployment Successful! 🎉</h2>
-            <p className="text-gray-400 mt-2">Your project has been deployed successfully.</p>
-            <a
-              href={deploymentStatus.deployedLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block mt-4 text-blue-400 hover:underline"
-            >
-              {deploymentStatus.deployedLink}
-            </a>
-            <button
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-              onClick={() => setShowModal(false)}
-            >
-              Close
-            </button>
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50">
+          <div className="bg-gray-800 p-8 rounded-xl shadow-2xl text-center w-full max-w-md border border-gray-700 transform transition-all animate-fadeIn">
+            <div className="w-16 h-16 bg-green-500/20 rounded-full mx-auto flex items-center justify-center mb-4">
+              <CheckCircle className="w-10 h-10 text-green-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Deployment Successful!</h2>
+            <p className="text-gray-400 mb-4">Your project has been deployed and is now live.</p>
+            
+            <div className="bg-gray-700 p-4 rounded-lg mb-5">
+              <p className="text-sm text-gray-400 mb-1">Your deployment URL:</p>
+              <a
+                href={deploymentStatus.deployedLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 break-all font-mono text-sm transition-colors"
+              >
+                {deploymentStatus.deployedLink}
+              </a>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                className="flex-1 px-4 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                onClick={() => setShowModal(false)}
+              >
+                Close
+              </button>
+              <a
+                href={deploymentStatus.deployedLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center"
+              >
+                <Globe className="w-4 h-4 mr-2" />
+                Visit Site
+              </a>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 };
+
+// Mock Terminal component definition for TypeScript
+const Terminal: React.FC<{ className: string }> = ({ className }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <polyline points="4 17 10 11 4 5"></polyline>
+    <line x1="12" y1="19" x2="20" y2="19"></line>
+  </svg>
+);
 
 export default App;
