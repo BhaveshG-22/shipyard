@@ -1,0 +1,244 @@
+const express = require('express')
+const http = require('http');
+const socketIO = require('socket.io');
+
+const app = express()
+const server = http.createServer(app);
+require('dotenv').config()
+
+const allowedOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [];
+
+const io = socketIO(server, {
+    cors: {
+        origin: allowedOrigins,
+        methods: ['GET', 'POST'],
+    }
+});
+
+
+const PORT = process.env.PORT
+const BASE_URL = process.env.BASE_URL
+const REDIS_SERVICE_URL = process.env.REDIS_SERVICE_URL
+const AWS_REGION = process.env.AWS_REGION
+const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY
+const ACCESSKEY_KEY_ID = process.env.ACCESSKEY_KEY_ID
+const AWS_CLUSTER_ID = process.env.AWS_CLUSTER_ID
+const AWS_TASK_ID = process.env.AWS_TASK_ID
+
+const AWS_SUBNETS = process.env.AWS_SUBNETS_ARRAY
+const AWS_SUBNETS_ARRAY = process.env.AWS_SUBNETS_ARRAY ? process.env.AWS_SUBNETS_ARRAY.split(',') : [];
+
+const AWS_SECURITY_GROUP = process.env.AWS_SECURITY_GROUP
+const AWS_SECURITY_GROUP_ARRAY = process.env.AWS_SECURITY_GROUP ? process.env.AWS_SECURITY_GROUP.split(',') : [];
+
+const AWS_ECR_IMAGE = process.env.AWS_ECR_IMAGE
+const CORS_ORIGINS = process.env.CORS_ORIGINS
+
+
+
+
+const cors = require('cors')
+app.use(cors({ origin: "*" }));
+const { generateSlug } = require("random-word-slugs")
+const { ECSClient, RunTaskCommand, StopTaskCommand } = require('@aws-sdk/client-ecs')
+const Valkey = require("ioredis");
+
+
+
+
+app.use(express.json())
+
+const subscriber = new Valkey(REDIS_SERVICE_URL);
+// const io = new Server({ cors: '*' })
+let channelName
+
+
+
+io.on('connection', socket => {
+    socket.on('subscribe', channel => {
+        console.log(`request to join channel ${channel}`);
+        socket.join(channel)
+        channel && socket.emit('message', { 'msg': `request in queue`, 'stage': 1 })
+    })
+
+
+    socket.on('disconnect', (channel) => {
+        console.log(`request to disconnect channel ${channel}`);
+        let attemptsToJoin = 5
+        let currentAttempt = 0;
+
+        while (currentAttempt <= attemptsToJoin) {
+            try {
+                socket.join(channel)
+            } catch (error) {
+                console.error(`ERROR RECONNECTING to ${channel}`);
+                console.error(`${attemptsToJoin - currentAttempt} Attempts Left`);
+
+            }
+
+            currentAttempt = currentAttempt + 1
+        }
+
+    })
+
+
+})
+
+
+
+const ecsCredential = new ECSClient({
+    region: AWS_REGION,
+    credentials: {
+        secretAccessKey: AWS_SECRET_ACCESS_KEY,
+        accessKeyId: ACCESSKEY_KEY_ID,
+    }
+})
+
+const config = {
+    CLUSTER: AWS_CLUSTER_ID,
+    TASK: AWS_TASK_ID
+}
+
+app.get('/', (req, res) => {
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Server Status</title>
+          <style>
+            body {
+              background-color: #f4f4f4;
+              font-family: Arial, sans-serif;
+              text-align: center;
+              margin-top: 100px;
+            }
+            .status {
+              color: green;
+              font-size: 2rem;
+              font-weight: bold;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="status">✅ Server is Online</div>
+        </body>
+      </html>
+    `);
+});
+
+
+app.post('/', async (req, res) => {
+    if (!req.body.gitURL) {
+        return res.json({
+            status: 'error',
+            data: { errorMSG: 'please pass GIT URL as gitURL in body' }
+        });
+    }
+
+    console.log('Request received');
+
+    const projectSlug = generateSlug();
+    const { gitURL } = req.body;
+
+    // Spin the container 
+    const command = new RunTaskCommand({
+        cluster: config.CLUSTER,
+        taskDefinition: config.TASK,
+        launchType: 'FARGATE',
+        count: 1,
+        networkConfiguration: {
+            awsvpcConfiguration: {
+                subnets: AWS_SUBNETS_ARRAY,
+                securityGroups: AWS_SECURITY_GROUP_ARRAY,
+                assignPublicIp: 'ENABLED',
+            }
+        },
+        overrides: {
+            containerOverrides: [{
+                name: AWS_ECR_IMAGE,
+                environment: [{ name: 'GIT_URL', value: gitURL }, { name: 'PROJECT_ID', value: projectSlug }]
+            }]
+        }
+    });
+
+    const response = await ecsCredential.send(command);
+    const taskArn = response.tasks[0]?.taskArn;  // Capture the task ARN
+
+    if (!taskArn) {
+        return res.json({ status: 'error', data: { errorMSG: 'Failed to start ECS task' } });
+    }
+
+    console.log(`Started Task: ${taskArn}`);
+
+    // Emit message after starting task
+    io.to(`logs:${projectSlug}`).emit('message', { msg: `git cloning`, stage: 2 });
+
+    res.json({
+        status: 'queue',
+        data: { projectSlug, taskArn, url: `http://${projectSlug}.${BASE_URL}` }
+    });
+
+    // Monitor completion and stop the task
+    monitorTaskCompletion(taskArn);
+});
+
+// Function to stop the ECS task after completion
+async function monitorTaskCompletion(taskArn) {
+    subscriber.on('pmessage', async (pattern, channel, message) => {
+        const msg = JSON.parse(message);
+        try {
+            if (msg.termLogs === 'Done') {  // Assume "done" means task completed
+                console.log(`Stopping task: ${taskArn}`);
+
+                const stopCommand = new StopTaskCommand({
+                    cluster: config.CLUSTER,
+                    task: taskArn, // Use the correct task ARN
+                    reason: "Build completed"
+                });
+
+                await ecsCredential.send(stopCommand);
+                console.log(`Task ${taskArn} stopped`);
+            } else if (msg.termLogs === 'sudo kill') {  // Assume "sudo kill" means task took too long ,time to destroy container and spin new one : TODO-spin new one once this stops
+                console.log(`Stopping task: ${taskArn}`);
+
+                const stopCommand = new StopTaskCommand({
+                    cluster: config.CLUSTER,
+                    task: taskArn, // Use the correct task ARN
+                    reason: "Task took more then 10 mins to complete"
+                });
+
+                await ecsCredential.send(stopCommand);
+                console.log(`Task ${taskArn} stopped`);
+            }
+        } catch (error) {
+            console.log(error);
+
+        }
+    });
+}
+
+
+
+
+
+
+
+server.listen(PORT, () => {
+    console.log(`Server running with Express + Socket.IO on port ${PORT}`);
+});
+
+
+
+async function initRedisSuscribe() {
+    console.log("Subscribed to redis logs");
+    subscriber.psubscribe('logs:*');
+    subscriber.on('pmessage', (pattern, channel, message) => {
+        io.to(channel).emit('message', message)
+        console.log('message');
+        console.log(message);
+
+    })
+}
+
+initRedisSuscribe()
+
