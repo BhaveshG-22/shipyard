@@ -25,11 +25,11 @@ const ACCESSKEY_KEY_ID = process.env.ACCESSKEY_KEY_ID
 const AWS_CLUSTER_ID = process.env.AWS_CLUSTER_ID
 const AWS_TASK_ID = process.env.AWS_TASK_ID
 
-const AWS_SUBNETS = process.env.AWS_SUBNETS_ARRAY
-const AWS_SUBNETS_ARRAY = process.env.AWS_SUBNETS_ARRAY ? process.env.AWS_SUBNETS_ARRAY.split(',') : [];
+const AWS_SUBNETS = process.env.AWS_SUBNETS
+const AWS_SUBNETS_ARRAY = AWS_SUBNETS ? AWS_SUBNETS.split(',') : [];
 
 const AWS_SECURITY_GROUP = process.env.AWS_SECURITY_GROUP
-const AWS_SECURITY_GROUP_ARRAY = process.env.AWS_SECURITY_GROUP ? process.env.AWS_SECURITY_GROUP.split(',') : [];
+const AWS_SECURITY_GROUP_ARRAY = AWS_SECURITY_GROUP ? AWS_SECURITY_GROUP.split(',') : [];
 
 const AWS_ECR_IMAGE = process.env.AWS_ECR_IMAGE
 const CORS_ORIGINS = process.env.CORS_ORIGINS

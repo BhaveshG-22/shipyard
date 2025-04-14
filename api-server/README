@@ -1,0 +1,64 @@
+
+##  ⚓ Shipyard – Deployment API Server (Socket.IO + AWS Fargate + Redis)
+
+This service powers a Vercel-style deployment experience using:
+- **Express** and **Socket.IO** for real-time feedback
+- **AWS ECS Fargate** to spin up containers on-demand
+- **Redis (Valkey)** Pub/Sub to stream logs
+- **Slug generation** for unique project URLs
+
+### 🌐 Features
+- Accepts a `gitURL`, spins a container to clone/build it.
+- Real-time deployment logs via WebSockets (`logs:projectSlug`).
+- Automatically stops ECS task once build is done.
+- Supports multiple concurrent builds using Redis pub/sub and Socket.IO channels.
+
+### 🛠️ Environment Variables
+```env
+PORT=9000
+BASE_URL=yourdomain.dev
+REDIS_SERVICE_URL=rediss://your-redis-url
+CORS_ORIGINS=http://localhost:3000,http://yourfrontend.com
+
+AWS_REGION=us-east-2
+AWS_SECRET_ACCESS_KEY=your-secret
+ACCESSKEY_KEY_ID=your-access
+AWS_CLUSTER_ID=your-ecs-cluster-arn
+AWS_TASK_ID=your-task-definition-arn
+AWS_SUBNETS_ARRAY=subnet-1,subnet-2
+AWS_SECURITY_GROUP=sg-12345678
+AWS_ECR_IMAGE=your-container-name
+```
+
+### 📦 Endpoints
+
+#### `GET /`
+- Returns a simple HTML page showing server is online.
+
+#### `POST /`
+- Body:
+```json
+{
+  "gitURL": "https://github.com/user/repo.git"
+}
+```
+- Returns:
+```json
+{
+  "status": "queue",
+  "data": {
+    "projectSlug": "funny-slug-name",
+    "taskArn": "...",
+    "url": "http://funny-slug-name.yourdomain.dev"
+  }
+}
+```
+
+### 📡 Socket.IO Events
+- `subscribe` to `logs:<projectSlug>` to receive real-time log messages.
+- Emits:
+  - `{ msg: 'git cloning', stage: 2 }`
+  - `{ termLogs: 'Done' }` from Redis when build completes.
+
+ 
+ 
