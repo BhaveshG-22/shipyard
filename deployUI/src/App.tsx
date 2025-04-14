@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   GitBranch,
   Building,
@@ -14,7 +14,8 @@ import {
   RefreshCw,
   CheckCircle,
   AlertCircle,
-  Clock
+  Clock,
+  Terminal
 } from 'lucide-react';
 import { Manager } from "socket.io-client";
 import TerminalUI from "../components/terminalUI";
@@ -82,11 +83,34 @@ const App: React.FC = () => {
   const [branchError, setBranchError] = useState<string>('');
   const [urlError, setUrlError] = useState<string>('');
 
+  // Add refs for the dropdowns to handle outside clicks
+  const folderDropdownRef = useRef<HTMLDivElement>(null);
+  const branchDropdownRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (deploymentStatus) {
       setProgress((deploymentStatus.currentStage / DEPLOYMENT_STAGES.length) * 100);
     }
   }, [deploymentStatus]);
+
+  // Add click outside handler to close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (folderDropdownRef.current && !folderDropdownRef.current.contains(event.target as Node)) {
+        setShowFolderDropdown(false);
+      }
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target as Node)) {
+        setShowBranchDropdown(false);
+      }
+    }
+
+    // Add event listener
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      // Remove event listener on cleanup
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   interface socketMessage {
     stage: number;
@@ -212,6 +236,10 @@ const App: React.FC = () => {
       }
 
       setRepoFolders(data.folders || []);
+      // If the previously selected folder is not in the new list, default to the first one
+      if (data.folders.length > 0 && !data.folders.includes(selectedFolder)) {
+        setSelectedFolder(data.folders[0]);
+      }
 
     } catch (error) {
       console.error('Error fetching repo folders:', error);
@@ -221,7 +249,7 @@ const App: React.FC = () => {
     } finally {
       setIsFetchingFolders(false);
     }
-  }, [githubUrl, api_server]);
+  }, [githubUrl, api_server, selectedFolder]);
 
   // Function to fetch repository branches
   const fetchRepoBranches = useCallback(async () => {
@@ -235,29 +263,33 @@ const App: React.FC = () => {
       const response = await fetch(`${api_server}/repo-branches?repoUrl=${encodeURIComponent(githubUrl)}`);
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch folders: ${response.status}`);
+        throw new Error(`Failed to fetch branches: ${response.status}`);
       }
 
       const data = await response.json();
 
-      if (!data.folders || data.folders.length === 0) {
-        setBranchError('No folders found in this repository');
+      if (!data.branches || data.branches.length === 0) {
+        setBranchError('No branches found in this repository');
         setRepoBranches([]);
         setSelectedBranch('main');
         return;
       }
 
-      setRepoFolders(data.folders || []);
+      setRepoBranches(data.branches || []);
+      // If the previously selected branch is not in the new list, default to the first one
+      if (data.branches.length > 0 && !data.branches.includes(selectedBranch)) {
+        setSelectedBranch(data.branches[0]);
+      }
 
     } catch (error) {
-      console.error('Error fetching repo folders:', error);
-      setFolderError('Failed to load repository folders. Please check the URL and try again.');
-      setRepoFolders([]);
+      console.error('Error fetching repo branches:', error);
+      setBranchError('Failed to load repository branches. Please check the URL and try again.');
+      setRepoBranches([]);
       setSelectedBranch('main');
     } finally {
       setIsFetchingBranches(false);
     }
-  }, [githubUrl, api_server]);
+  }, [githubUrl, api_server, selectedBranch]);
 
   // Fetch folders and branches when GitHub URL changes and is valid
   useEffect(() => {
@@ -301,7 +333,8 @@ const App: React.FC = () => {
         },
         body: JSON.stringify({
           gitURL: githubUrl,
-          folder: selectedFolder
+          folder: selectedFolder,
+          branch: selectedBranch  // Include the selected branch in the request
         }),
       });
 
@@ -321,7 +354,7 @@ const App: React.FC = () => {
       setDeploymentStatus(null);
       alert(`Deployment failed: ${(error as Error).message}`);
     }
-  }, [githubUrl, selectedFolder, api_server]);
+  }, [githubUrl, selectedFolder, selectedBranch, api_server]);
 
   // Function to get status icon based on deployment stage status
   const getStatusIcon = (status: string) => {
@@ -374,12 +407,15 @@ const App: React.FC = () => {
                       />
                     </div>
                     <button
-                      onClick={fetchRepoFolders}
-                      disabled={!githubUrl || isFetchingFolders || isLoading}
+                      onClick={() => {
+                        fetchRepoFolders();
+                        fetchRepoBranches();
+                      }}
+                      disabled={!githubUrl || isFetchingFolders || isFetchingBranches || isLoading}
                       className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50 flex items-center"
-                      title="Refresh folders"
+                      title="Refresh repository data"
                     >
-                      {isFetchingFolders ? (
+                      {isFetchingFolders || isFetchingBranches ? (
                         <Loader2 className="animate-spin w-5 h-5" />
                       ) : (
                         <RefreshCw className="w-5 h-5" />
@@ -390,14 +426,19 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Folder Selection Dropdown */}
-                <div className="mb-5">
+                <div className="mb-5" ref={folderDropdownRef}>
                   <label className="text-gray-300 text-sm font-medium mb-1.5 block">Project Folder</label>
                   <div className="relative">
                     <button
                       type="button"
-                      className={`w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center transition-colors ${folderError ? 'border border-red-500' : 'border border-gray-600'} ${isLoading || repoFolders.length === 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-650'}`}
-                      onClick={() => setShowFolderDropdown(!showFolderDropdown)}
-                      disabled={isLoading || repoFolders.length === 0}
+                      className={`w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center transition-colors ${folderError ? 'border border-red-500' : 'border border-gray-600'} ${isLoading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-650'}`}
+                      onClick={() => {
+                        if (!isLoading) {
+                          setShowFolderDropdown(!showFolderDropdown);
+                          setShowBranchDropdown(false); // Close other dropdown
+                        }
+                      }}
+                      disabled={isLoading}
                     >
                       <div className="flex items-center">
                         <Folder className="w-5 h-5 mr-2 text-gray-400" />
@@ -410,24 +451,30 @@ const App: React.FC = () => {
                       )}
                     </button>
 
-                    {showFolderDropdown && repoFolders.length > 0 && (
+                    {showFolderDropdown && (
                       <div className="absolute z-10 w-full mt-1 bg-gray-700 rounded-lg shadow-xl border border-gray-600 max-h-60 overflow-y-auto">
-                        {repoFolders.map((folder, index) => (
-                          <div
-                            key={index}
-                            className="px-4 py-2.5 hover:bg-gray-600 cursor-pointer flex items-center transition-colors duration-150"
-                            onClick={() => {
-                              setSelectedFolder(folder);
-                              setShowFolderDropdown(false);
-                              setFolderError('');
-                            }}
-                          >
-                            <Folder className="w-4 h-4 mr-2 text-gray-400" />
-                            <span className={selectedFolder === folder ? 'font-medium text-blue-400' : 'text-white'}>
-                              {folder}
-                            </span>
+                        {repoFolders.length > 0 ? (
+                          repoFolders.map((folder, index) => (
+                            <div
+                              key={index}
+                              className="px-4 py-2.5 hover:bg-gray-600 cursor-pointer flex items-center transition-colors duration-150"
+                              onClick={() => {
+                                setSelectedFolder(folder);
+                                setShowFolderDropdown(false);
+                                setFolderError('');
+                              }}
+                            >
+                              <Folder className="w-4 h-4 mr-2 text-gray-400" />
+                              <span className={selectedFolder === folder ? 'font-medium text-blue-400' : 'text-white'}>
+                                {folder}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="px-4 py-3 text-gray-400 text-center">
+                            No folders available
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                   </div>
@@ -441,17 +488,20 @@ const App: React.FC = () => {
                   )}
                 </div>
 
-
-
                 {/* Branch Selection Dropdown */}
-                <div className="mb-5">
+                <div className="mb-5" ref={branchDropdownRef}>
                   <label className="text-gray-300 text-sm font-medium mb-1.5 block">Project Branch</label>
                   <div className="relative">
                     <button
                       type="button"
-                      className={`w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center transition-colors ${branchError ? 'border border-red-500' : 'border border-gray-600'} ${isLoading || repoBranches.length === 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-650'}`}
-                      onClick={() => setShowBranchDropdown(!showBranchDropdown)}
-                      disabled={isLoading || repoBranches.length === 0}
+                      className={`w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center transition-colors ${branchError ? 'border border-red-500' : 'border border-gray-600'} ${isLoading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-650'}`}
+                      onClick={() => {
+                        if (!isLoading) {
+                          setShowBranchDropdown(!showBranchDropdown);
+                          setShowFolderDropdown(false); // Close other dropdown
+                        }
+                      }}
+                      disabled={isLoading}
                     >
                       <div className="flex items-center">
                         <GitBranch className="w-5 h-5 mr-2 text-gray-400" />
@@ -464,24 +514,30 @@ const App: React.FC = () => {
                       )}
                     </button>
 
-                    {showBranchDropdown && repoBranches.length > 0 && (
+                    {showBranchDropdown && (
                       <div className="absolute z-10 w-full mt-1 bg-gray-700 rounded-lg shadow-xl border border-gray-600 max-h-60 overflow-y-auto">
-                        {repoBranches.map((branch, index) => (
-                          <div
-                            key={index}
-                            className="px-4 py-2.5 hover:bg-gray-600 cursor-pointer flex items-center transition-colors duration-150"
-                            onClick={() => {
-                              setSelectedBranch(branch);
-                              setShowBranchDropdown(false);
-                              setFolderError('');
-                            }}
-                          >
-                            <Folder className="w-4 h-4 mr-2 text-gray-400" />
-                            <span className={selectedBranch === branch ? 'font-medium text-blue-400' : 'text-white'}>
-                              {branch}
-                            </span>
+                        {repoBranches.length > 0 ? (
+                          repoBranches.map((branch, index) => (
+                            <div
+                              key={index}
+                              className="px-4 py-2.5 hover:bg-gray-600 cursor-pointer flex items-center transition-colors duration-150"
+                              onClick={() => {
+                                setSelectedBranch(branch);
+                                setShowBranchDropdown(false);
+                                setBranchError('');
+                              }}
+                            >
+                              <GitBranch className="w-4 h-4 mr-2 text-gray-400" />
+                              <span className={selectedBranch === branch ? 'font-medium text-blue-400' : 'text-white'}>
+                                {branch}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="px-4 py-3 text-gray-400 text-center">
+                            No branches available
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                   </div>
@@ -500,7 +556,7 @@ const App: React.FC = () => {
                 {/* Deploy Button */}
                 <button
                   onClick={handleDeploy}
-                  disabled={!githubUrl || !selectedFolder || isLoading || !!urlError || !!folderError}
+                  disabled={!githubUrl || !selectedFolder || isLoading || !!urlError || !!folderError || !!branchError}
                   className="w-full py-3.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 font-medium flex justify-center items-center shadow-lg"
                 >
                   {isLoading ? (
@@ -629,23 +685,5 @@ const App: React.FC = () => {
   );
 };
 
-// Mock Terminal component definition for TypeScript
-const Terminal: React.FC<{ className: string }> = ({ className }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={className}
-  >
-    <polyline points="4 17 10 11 4 5"></polyline>
-    <line x1="12" y1="19" x2="20" y2="19"></line>
-  </svg>
-);
 
 export default App;
