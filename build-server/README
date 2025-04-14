@@ -1,0 +1,4 @@
+Issues
+
+if a project folder exists in a repos as a individual project, it doesnt build
+expected, app should show all the different indivisual projects in repos and ask which one to build
