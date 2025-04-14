@@ -334,7 +334,7 @@ const App: React.FC = () => {
         body: JSON.stringify({
           gitURL: githubUrl,
           folder: selectedFolder,
-          branch: selectedBranch  // Include the selected branch in the request
+          branch: selectedBranch  
         }),
       });
 

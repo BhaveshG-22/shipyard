@@ -198,7 +198,7 @@ app.post('/', async (req, res) => {
     console.log('Request received');
 
     const projectSlug = generateSlug();
-    const { gitURL, folder } = req.body;
+    const { gitURL, folder, branch } = req.body;
 
     // Spin the container 
     const command = new RunTaskCommand({
@@ -219,6 +219,7 @@ app.post('/', async (req, res) => {
                 environment: [
                     { name: 'GIT_URL', value: gitURL },
                     { name: 'GIT_ROOT', value: folder },
+                    { name: 'GIT_BRANCH', value: branch },
                     { name: 'REDIS_URI', value: REDIS_SERVICE_URL },
                     { name: 'S3_BUCKET', value: S3_BUCKET },
                     { name: 'ACCESS_KEY_ID', value: ACCESSKEY_KEY_ID },
