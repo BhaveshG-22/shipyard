@@ -169,6 +169,23 @@ app.get('/repo-folders', async (req, res) => {
     }
 });
 
+app.get('/repo-branches', async (req, res) => {
+    const repoUrl = req.query.repoUrl; // ?repoUrl=https://github.com/BhaveshG-22/shipyard
+    if (!repoUrl) return res.status(400).json({ error: "Missing repoUrl" });
+
+    const repoPath = repoUrl.replace('https://github.com/', '');
+    const [owner, repo] = repoPath.split('/');
+
+    try {
+        const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/branches`);
+        const branches = response.data.map(branch => branch.name);
+        res.json({ branches });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch branches' });
+    }
+});
+
 
 app.post('/', async (req, res) => {
     if (!req.body.gitURL || !req.body.folder) {
