@@ -69,12 +69,17 @@ const App: React.FC = () => {
 
   // Repo folders state
   const [repoFolders, setRepoFolders] = useState<string[]>([]);
+  const [repoBranches, setRepoBranches] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string>('/');
+  const [selectedBranch, setSelectedBranch] = useState<string>('main');
   const [isFetchingFolders, setIsFetchingFolders] = useState<boolean>(false);
+  const [isFetchingBranches, setIsFetchingBranches] = useState<boolean>(false);
   const [showFolderDropdown, setShowFolderDropdown] = useState<boolean>(false);
+  const [showBranchDropdown, setShowBranchDropdown] = useState<boolean>(false);
 
   // Error handling state
   const [folderError, setFolderError] = useState<string>('');
+  const [branchError, setBranchError] = useState<string>('');
   const [urlError, setUrlError] = useState<string>('');
 
   useEffect(() => {
@@ -218,12 +223,49 @@ const App: React.FC = () => {
     }
   }, [githubUrl, api_server]);
 
-  // Fetch folders when GitHub URL changes and is valid
+  // Function to fetch repository branches
+  const fetchRepoBranches = useCallback(async () => {
+    if (!validateGithubUrl(githubUrl)) {
+      return;
+    }
+
+    setBranchError('');
+    setIsFetchingBranches(true);
+    try {
+      const response = await fetch(`${api_server}/repo-branches?repoUrl=${encodeURIComponent(githubUrl)}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch folders: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.folders || data.folders.length === 0) {
+        setBranchError('No folders found in this repository');
+        setRepoBranches([]);
+        setSelectedBranch('main');
+        return;
+      }
+
+      setRepoFolders(data.folders || []);
+
+    } catch (error) {
+      console.error('Error fetching repo folders:', error);
+      setFolderError('Failed to load repository folders. Please check the URL and try again.');
+      setRepoFolders([]);
+      setSelectedBranch('main');
+    } finally {
+      setIsFetchingBranches(false);
+    }
+  }, [githubUrl, api_server]);
+
+  // Fetch folders and branches when GitHub URL changes and is valid
   useEffect(() => {
     if (githubUrl.trim() && validateGithubUrl(githubUrl)) {
       fetchRepoFolders();
+      fetchRepoBranches();
     }
-  }, [githubUrl, fetchRepoFolders]);
+  }, [githubUrl, fetchRepoFolders, fetchRepoBranches]);
 
   const handleGithubUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const url = e.target.value;
@@ -395,6 +437,60 @@ const App: React.FC = () => {
                     <div className="flex items-center mt-2 text-sm text-gray-400">
                       <Loader2 className="animate-spin w-4 h-4 mr-2" />
                       <span>Fetching folders...</span>
+                    </div>
+                  )}
+                </div>
+
+
+
+                {/* Branch Selection Dropdown */}
+                <div className="mb-5">
+                  <label className="text-gray-300 text-sm font-medium mb-1.5 block">Project Branch</label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className={`w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center transition-colors ${branchError ? 'border border-red-500' : 'border border-gray-600'} ${isLoading || repoBranches.length === 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-650'}`}
+                      onClick={() => setShowBranchDropdown(!showBranchDropdown)}
+                      disabled={isLoading || repoBranches.length === 0}
+                    >
+                      <div className="flex items-center">
+                        <GitBranch className="w-5 h-5 mr-2 text-gray-400" />
+                        {selectedBranch || "Select a branch"}
+                      </div>
+                      {showBranchDropdown ? (
+                        <ChevronUp className="w-5 h-5 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                      )}
+                    </button>
+
+                    {showBranchDropdown && repoBranches.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-gray-700 rounded-lg shadow-xl border border-gray-600 max-h-60 overflow-y-auto">
+                        {repoBranches.map((branch, index) => (
+                          <div
+                            key={index}
+                            className="px-4 py-2.5 hover:bg-gray-600 cursor-pointer flex items-center transition-colors duration-150"
+                            onClick={() => {
+                              setSelectedBranch(branch);
+                              setShowBranchDropdown(false);
+                              setFolderError('');
+                            }}
+                          >
+                            <Folder className="w-4 h-4 mr-2 text-gray-400" />
+                            <span className={selectedBranch === branch ? 'font-medium text-blue-400' : 'text-white'}>
+                              {branch}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {branchError && <p className="mt-1 text-sm text-red-400">{branchError}</p>}
+
+                  {isFetchingBranches && (
+                    <div className="flex items-center mt-2 text-sm text-gray-400">
+                      <Loader2 className="animate-spin w-4 h-4 mr-2" />
+                      <span>Fetching branches...</span>
                     </div>
                   )}
                 </div>
