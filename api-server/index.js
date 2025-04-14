@@ -219,7 +219,7 @@ app.post('/', async (req, res) => {
                 environment: [
                     { name: 'GIT_URL', value: gitURL },
                     { name: 'GIT_ROOT', value: folder },
-                    { name: 'GIT_BRANCH', value: branch },
+                    { name: 'GIT_BRANCH', value: branch || 'main' },
                     { name: 'REDIS_URI', value: REDIS_SERVICE_URL },
                     { name: 'S3_BUCKET', value: S3_BUCKET },
                     { name: 'ACCESS_KEY_ID', value: ACCESSKEY_KEY_ID },
@@ -256,8 +256,8 @@ app.post('/', async (req, res) => {
 // Function to stop the ECS task after completion
 async function monitorTaskCompletion(taskArn) {
     subscriber.on('pmessage', async (pattern, channel, message) => {
-        const msg = JSON.parse(message);
         try {
+            const msg = JSON.parse(message);
             if (msg.termLogs === 'Done') {  // Assume "done" means task completed
                 console.log(`Stopping task: ${taskArn}`);
 
@@ -269,7 +269,7 @@ async function monitorTaskCompletion(taskArn) {
 
                 await ecsCredential.send(stopCommand);
                 console.log(`Task ${taskArn} stopped`);
-            } else if (msg.termLogs === 'sudo kill') {  // Assume "sudo kill" means task took too long ,time to destroy container and spin new one : TODO-spin new one once this stops
+            } else if (msg.termLogs === 'sudo kill') {  // Assume "sudo kill" means task took too long
                 console.log(`Stopping task: ${taskArn}`);
 
                 const stopCommand = new StopTaskCommand({
@@ -283,7 +283,6 @@ async function monitorTaskCompletion(taskArn) {
             }
         } catch (error) {
             console.log(error);
-
         }
     });
 }
@@ -294,22 +293,28 @@ async function monitorTaskCompletion(taskArn) {
 
 
 
-server.listen(PORT, () => {
-    console.log(`Server running with Express + Socket.IO on port ${PORT}`);
-});
-
-
-
 async function initRedisSuscribe() {
     console.log("Subscribed to redis logs");
     subscriber.psubscribe('logs:*');
     subscriber.on('pmessage', (pattern, channel, message) => {
-        io.to(channel).emit('message', message)
+        io.to(channel).emit('message', message);
         console.log('message');
         console.log(message);
-
-    })
+    });
 }
 
-initRedisSuscribe()
+initRedisSuscribe();
+
+// Start the server only if this file is run directly (not when imported in tests)
+if (require.main === module) {
+    server.listen(PORT, () => {
+        console.log(`Server running with Express + Socket.IO on port ${PORT}`);
+    });
+}
+
+// Export for testing
+module.exports = app;
+// Also export server and io for socket tests
+module.exports.server = server;
+module.exports.io = io;
 
