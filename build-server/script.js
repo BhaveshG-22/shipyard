@@ -117,18 +117,6 @@ const s3Client = new S3Client({
 
 const PROJECT_ID = process.env.PROJECT_ID
 
-
-async function cleanupDocker() {
-    console.log("Stopping and removing Docker container...");
-    exec(`docker stop <container_id_or_name> && docker rm <container_id_or_name>`, (err, stdout, stderr) => {
-        if (err) {
-            console.error(`Error stopping container: ${stderr}`);
-        } else {
-            console.log(`Container stopped and removed: ${stdout}`);
-        }
-    });
-}
-
 async function init() {
     console.log('Executing script.js')
     filesBeforeBuild = filesAtDir(false)
@@ -205,11 +193,6 @@ async function init() {
 
         console.log('Done...');
         console.log(`Visit http://${process.env.PROJECT_ID}.${process.env.REVERSE_PROXY_URL}`);
-
-
-
-        await cleanupDocker();
-
     })
 }
 
