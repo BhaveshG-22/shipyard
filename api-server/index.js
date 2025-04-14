@@ -154,7 +154,7 @@ app.post('/', async (req, res) => {
     if (!req.body.gitURL || !req.body.selectedFolder) {
         return res.json({
             status: 'error',
-            data: { errorMSG: 'gitURL OR selectedFolder missing in req body' }
+            data: { errorMSG: `gitURL OR selectedFolder missing in req body received ${req.body}` }
         });
     }
 
