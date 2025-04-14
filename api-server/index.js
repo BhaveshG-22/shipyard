@@ -3,12 +3,18 @@ const http = require('http');
 const socketIO = require('socket.io');
 const axios = require('axios');
 
-
+const cors = require('cors');
 const app = express()
 const server = http.createServer(app);
 require('dotenv').config()
 
+app.use((req, res, next) => {
+    console.log(`🌐 Incoming request from: ${req.headers.origin}`);
+    next();
+});
+
 const allowedOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [];
+console.log(`allowedOrigins: ${allowedOrigins}`)
 
 const io = socketIO(server, {
     cors: {
@@ -16,6 +22,8 @@ const io = socketIO(server, {
         methods: ['GET', 'POST'],
     }
 });
+
+
 
 
 const PORT = process.env.PORT
@@ -34,13 +42,24 @@ const AWS_SECURITY_GROUP = process.env.AWS_SECURITY_GROUP
 const AWS_SECURITY_GROUP_ARRAY = AWS_SECURITY_GROUP ? AWS_SECURITY_GROUP.split(',') : [];
 
 const AWS_ECR_IMAGE = process.env.AWS_ECR_IMAGE
-const CORS_ORIGINS = process.env.CORS_ORIGINS
+
+
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            console.log(`✅ Allowed CORS request from: ${origin}`);
+            callback(null, true);
+        } else {
+            console.log(`❌ Blocked CORS request from: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST'],
+    credentials: true,
+}));
 
 
 
-
-const cors = require('cors')
-app.use(cors({ origin: "*" }));
 const { generateSlug } = require("random-word-slugs")
 const { ECSClient, RunTaskCommand, StopTaskCommand } = require('@aws-sdk/client-ecs')
 const Valkey = require("ioredis");
