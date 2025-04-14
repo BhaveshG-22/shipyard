@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "nodemon index.js",
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "dependencies": {
     "@aws-sdk/client-ecs": "^3.758.0",
@@ -25,5 +25,12 @@
     "npm": "^11.2.0",
     "random-word-slugs": "^0.1.7",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
+    "axios-mock-adapter": "^1.22.0",
+    "redis-mock": "^0.56.3",
+    "socket.io-client": "^4.8.1"
   }
 }
