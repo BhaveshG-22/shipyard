@@ -6,7 +6,6 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3')
 const mime = require('mime-types')
 const Valkey = require("ioredis");
 
-
 const requiredEnvVars = [
     'REDIS_URI',
     'S3_BUCKET',
@@ -18,190 +17,145 @@ const requiredEnvVars = [
 ];
 
 const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
-
 if (missingEnvVars.length > 0) {
-    throw new Error(`❌ Missing required environment variables: ${missingEnvVars.join(', ')}`);
+    const errMsg = `❌ Missing required environment variables: ${missingEnvVars.join(', ')}`;
+    console.error(errMsg);
+    process.exit(1);
 }
-
 
 const serviceUri = process.env.REDIS_URI;
 const S3_BUCKET = process.env.S3_BUCKET;
 const valkey = new Valkey(serviceUri);
-
-
-
-//function to kill container if it runs for more thsn 7.5 minutes
-setTimeout(() => {
-    publishLog({ termLogs: `sudo kill` })
-}, 1000 * 60 * 7.5) // 7.5 minutes
+const PROJECT_ID = process.env.PROJECT_ID;
 
 async function publishLog(log) {
-    // console.log('Logs Publishing Start: ', log);
+    try {
+        const logData = {};
+        if (log.msg) logData.msg = log.msg;
+        if (log.stage !== undefined) logData.stage = log.stage;
+        if (log.termLogs) logData.termLogs = log.termLogs;
 
-    const logData = {};
-
-    if (log.msg !== undefined) logData.msg = log.msg;
-    if (log.stage !== undefined) logData.stage = log.stage;
-    if (log.termLogs !== undefined) logData.termLogs = log.termLogs;
-
-    await valkey.publish(`logs:${PROJECT_ID}`, JSON.stringify(logData));
+        await valkey.publish(`logs:${PROJECT_ID}`, JSON.stringify(logData));
+    } catch (err) {
+        console.error(`❌ Failed to publish log: ${err.message}`);
+    }
 }
 
+setTimeout(() => {
+    publishLog({ termLogs: `❌ Timeout reached. Killing process.` });
+    process.exit(1);
+}, 1000 * 60 * 7.5);
 
 function filesAtDir(recursive) {
-    if (typeof recursive !== 'boolean') {
-        throw new Error(`FilesAtDir: incorrect argument received, expected boolean but received: ${recursive}`);
+    try {
+        if (typeof recursive !== 'boolean') {
+            throw new Error(`Expected boolean, received: ${recursive}`);
+        }
+        let files = fs.readdirSync(path.join(__dirname, 'output'), { recursive });
+        return files.filter(f => !f.startsWith('node_modules'));
+    } catch (err) {
+        publishLog({ msg: `❌ filesAtDir error: ${err.message}`, stage: -1 });
+        throw err;
     }
-    let files = fs.readdirSync(path.join(__dirname, 'output'), { recursive: recursive })
-    console.log(files);
-    console.log(`files.length ${files.length}`);
-
-
-    files = [...files].filter((file) => {
-        let parent = file.split('/')[0]
-
-        return parent !== 'node_modules'
-    })
-
-    return files
 }
 
 function getFilesDiff(beforeFiles, afterFiles) {
+    try {
+        const beforeSet = new Set(beforeFiles);
+        const newFiles = afterFiles.filter(f =>
+            !beforeSet.has(f) &&
+            !['node_modules', 'package.json', 'package-lock.json', 'tsconfig.app.tsbuildinfo', 'tsconfig.node.tsbuildinfo'].includes(f)
+        );
 
-    let newFiles = new Set()
-    const beforeFilesSet = new Set(beforeFiles)
-    const afterFilesSet = new Set(afterFiles)
-
-    newFiles = [...afterFiles].filter((file) => {
-
-        if (file == 'node_modules') {
-            return
-        }
-        if (file == 'package.json') {
-            return
-        }
-        if (file == 'package-lock.json') {
-            return
-        }
-        if (file == 'tsconfig.app.tsbuildinfo') {
-            return
-        }
-        if (file == 'tsconfig.node.tsbuildinfo') {
-            return
+        if (newFiles.length !== 1) {
+            throw new Error(`Unexpected newFiles: ${JSON.stringify(newFiles)}`);
         }
 
-        if (!beforeFilesSet.has(file)) {
-            return file
-        }
-    })
-
-    if (newFiles.length !== 1) {
-        console.log(newFiles);
-
-        throw new Error("newFiles present which was not expected");
+        return newFiles[0];
+    } catch (err) {
+        publishLog({ msg: `❌ getFilesDiff error: ${err.message}`, stage: -1 });
+        throw err;
     }
-
-    return newFiles[0]
 }
-
-let filesBeforeBuild;
-let filesAfterBuild;
 
 const s3Client = new S3Client({
     region: process.env.REGION,
     credentials: {
-        secretAccessKey: process.env.SECRET_ACCESS_KEY,
         accessKeyId: process.env.ACCESS_KEY_ID,
+        secretAccessKey: process.env.SECRET_ACCESS_KEY,
     }
-})
-
-const PROJECT_ID = process.env.PROJECT_ID
+});
 
 async function init() {
-    console.log('Executing script.js')
-    filesBeforeBuild = filesAtDir(false)
-    publishLog({ msg: 'Build Started...', stage: 3 })
-    const outDirPath = path.join(__dirname, 'output')
+    try {
+        console.log('🚀 Executing script.js');
+        filesBeforeBuild = filesAtDir(false);
+        await publishLog({ msg: '⚙️ Build Started...', stage: 3 });
 
-    const p = exec(`cd ${outDirPath} && npm install && npm run build`)
+        const outDirPath = path.join(__dirname, 'output');
 
-    p.stdout.on('data', function (data) {
-        console.log(data.toString())
-        publishLog({ termLogs: data.toString() })
+        const p = exec(`cd ${outDirPath} && npm install && npm run build`);
 
-    })
+        p.stdout.on('data', async (data) => {
+            console.log(data.toString());
+            await publishLog({ termLogs: data.toString() });
+        });
 
-    p.stdout.on('error', function (data) {
-        console.log('Error', data.toString())
-        publishLog({ msg: `Error ${data.toString()}`, stage: -1 })
+        p.stderr?.on('data', async (data) => {
+            console.error('Build error:', data.toString());
+            await publishLog({ msg: `❌ Build Error: ${data.toString()}`, stage: -1 });
+        });
 
-    })
+        p.on('close', async (code) => {
+            if (code !== 0) {
+                await publishLog({ msg: `❌ Build exited with code ${code}`, stage: -1 });
+                return;
+            }
 
-    p.on('close', async function () {
-        console.log('Build Complete')
-        publishLog({ msg: 'Build Completed', stage: 4 })
+            await publishLog({ msg: '✅ Build Completed', stage: 4 });
+            filesAfterBuild = filesAtDir(false);
 
+            const diff = getFilesDiff(filesBeforeBuild, filesAfterBuild);
 
+            console.log(diff);
 
+            const distPath = path.join(__dirname, 'output', diff);
+            const contents = fs.readdirSync(distPath, { recursive: true });
 
-        filesAfterBuild = filesAtDir(false)
+            await publishLog({ msg: '📤 Starting upload', stage: 5 });
 
-        console.log("filesBeforeBuild");
-        console.log(filesBeforeBuild);
-        console.log(filesBeforeBuild.length);
+            for (const file of contents) {
+                const filePath = path.join(distPath, file);
+                if (fs.lstatSync(filePath).isDirectory()) continue;
 
-        console.log("filesAfterBuild");
-        console.log(filesAfterBuild);
-        console.log(filesAfterBuild.length);
+                try {
+                    await publishLog({ termLogs: `Uploading ${file}` });
 
-        let diff = getFilesDiff(filesBeforeBuild, filesAfterBuild)
-        console.log("diff----------------->");
-        console.log(diff);
-        console.log(diff.length);
+                    const command = new PutObjectCommand({
+                        Bucket: S3_BUCKET,
+                        Key: `__outputs/${PROJECT_ID}/${file}`,
+                        Body: fs.createReadStream(filePath),
+                        ContentType: mime.lookup(filePath)
+                    });
 
-        console.log("filesAtDir(true)");
-        console.log(filesAtDir(true));
+                    await s3Client.send(command);
+                    await publishLog({ termLogs: `✅ Uploaded ${file}` });
+                } catch (err) {
+                    await publishLog({ msg: `❌ Upload error for ${file}: ${err.message}`, stage: -1 });
+                }
+            }
 
+            await publishLog({ msg: '🌐 Assigning domain', stage: 6 });
+            await publishLog({ termLogs: `Visit http://${PROJECT_ID}.${process.env.REVERSE_PROXY_URL}` });
+            await publishLog({ termLogs: `✅ Done` });
 
-        const distFolderPath = path.join(__dirname, 'output', diff)
-        const distFolderContents = fs.readdirSync(distFolderPath, { recursive: true })
+            console.log('Done!');
+        });
 
-        publishLog({ msg: 'Starting to upload', stage: 5 })
-
-        for (const file of distFolderContents) {
-            const filePath = path.join(distFolderPath, file)
-            if (fs.lstatSync(filePath).isDirectory()) continue;
-
-            console.log('uploading', filePath)
-            publishLog({ termLogs: `uploading ${file}` })
-
-
-            const command = new PutObjectCommand({
-                Bucket: S3_BUCKET,
-                Key: `__outputs/${PROJECT_ID}/${file}`,
-                Body: fs.createReadStream(filePath),
-                ContentType: mime.lookup(filePath)
-            })
-            await s3Client.send(command)
-            publishLog({ termLogs: `uploaded ${file}` })
-            console.log('uploaded', filePath)
-        }
-        publishLog({ msg: 'Assigning Domain', stage: 6 })
-        publishLog({ termLogs: `Visit http://${process.env.PROJECT_ID}.${process.env.REVERSE_PROXY_URL}` })
-        publishLog({ termLogs: `Done` })
-
-
-        console.log('Done...');
-        console.log(`Visit http://${process.env.PROJECT_ID}.${process.env.REVERSE_PROXY_URL}`);
-    })
+    } catch (err) {
+        console.error(`Fatal Error: ${err.message}`);
+        await publishLog({ msg: `❌ Fatal Error: ${err.message}`, stage: -1 });
+    }
 }
 
-init()
-
-
-
-
-
-
-
-
+init();
