@@ -43,7 +43,7 @@ const TerminalUI: React.FC<TerminalUIProps> = ({ termLogs = [] }) => {
   return (
     <div 
       ref={terminalRef}
-      className="w-full h-full bg-gray-900 rounded-lg overflow-y-auto font-mono text-sm shadow-inner"
+      className="w-full min-h-full bg-gray-900 rounded-lg overflow-y-auto font-mono text-sm shadow-inner"
     >
       {/* Terminal header */}
       <div className="flex items-center h-8 px-4 bg-gray-800 border-b border-gray-700">

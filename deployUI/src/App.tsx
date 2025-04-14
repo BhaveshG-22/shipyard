@@ -304,127 +304,122 @@ const App: React.FC = () => {
           <h1 className="text-3xl font-bold text-white">GitHub Deployment</h1>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-8">
+        <div className="flex flex-col lg:flex-row gap-8 items-stretch">
           {/* Left Side Form - Deployment UI */}
           <div className="flex-1">
-            {/* Configuration Panel */}
-            <div className="bg-gray-750 rounded-lg p-5 border border-gray-700 shadow-lg">
-              <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
-                <GitBranch className="w-5 h-5 mr-2 text-blue-400" />
-                Repository Configuration
-              </h2>
+            <div className="h-full bg-gray-750 rounded-lg p-5 border border-gray-700 shadow-lg flex flex-col justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
+                  <GitBranch className="w-5 h-5 mr-2 text-blue-400" />
+                  Repository Configuration
+                </h2>
 
-              {/* GitHub URL Input */}
-              <div className="mb-4">
-                <label className="text-gray-300 text-sm font-medium mb-1.5 block">
-                  Repository URL
-                </label>
-                <div className="flex space-x-2">
-                  <div className="relative flex-1">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Github className="h-5 w-5 text-gray-400" />
+                {/* GitHub URL Input */}
+                <div className="mb-4">
+                  <label className="text-gray-300 text-sm font-medium mb-1.5 block">Repository URL</label>
+                  <div className="flex space-x-2">
+                    <div className="relative flex-1">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Github className="h-5 w-5 text-gray-400" />
+                      </div>
+                      <input
+                        type="text"
+                        value={githubUrl}
+                        onChange={handleGithubUrlChange}
+                        placeholder="https://github.com/username/repo"
+                        className={`w-full pl-10 pr-4 py-3 bg-gray-700 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition ${urlError ? 'border border-red-500' : 'border border-gray-600'}`}
+                        disabled={isLoading}
+                      />
                     </div>
-                    <input
-                      type="text"
-                      value={githubUrl}
-                      onChange={handleGithubUrlChange}
-                      placeholder="https://github.com/username/repo"
-                      className={`w-full pl-10 pr-4 py-3 bg-gray-700 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition ${urlError ? 'border border-red-500' : 'border border-gray-600'}`}
-                      disabled={isLoading}
-                    />
+                    <button
+                      onClick={fetchRepoFolders}
+                      disabled={!githubUrl || isFetchingFolders || isLoading}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50 flex items-center"
+                      title="Refresh folders"
+                    >
+                      {isFetchingFolders ? (
+                        <Loader2 className="animate-spin w-5 h-5" />
+                      ) : (
+                        <RefreshCw className="w-5 h-5" />
+                      )}
+                    </button>
                   </div>
-                  <button
-                    onClick={fetchRepoFolders}
-                    disabled={!githubUrl || isFetchingFolders || isLoading}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50 flex items-center"
-                    title="Refresh folders"
-                  >
-                    {isFetchingFolders ? (
-                      <Loader2 className="animate-spin w-5 h-5" />
-                    ) : (
-                      <RefreshCw className="w-5 h-5" />
-                    )}
-                  </button>
+                  {urlError && <p className="mt-1 text-sm text-red-400">{urlError}</p>}
                 </div>
-                {urlError && (
-                  <p className="mt-1 text-sm text-red-400">{urlError}</p>
-                )}
-              </div>
 
-              {/* Folder Selection Dropdown */}
-              <div className="mb-5">
-                <label className="text-gray-300 text-sm font-medium mb-1.5 block">
-                  Project Folder
-                </label>
-                <div className="relative">
-                  <button
-                    type="button"
-                    className={`w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center transition-colors ${folderError ? 'border border-red-500' : 'border border-gray-600'} ${isLoading || repoFolders.length === 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-650'}`}
-                    onClick={() => setShowFolderDropdown(!showFolderDropdown)}
-                    disabled={isLoading || repoFolders.length === 0}
-                  >
-                    <div className="flex items-center">
-                      <Folder className="w-5 h-5 mr-2 text-gray-400" />
-                      {selectedFolder || "Select a folder"}
-                    </div>
-                    {showFolderDropdown ? (
-                      <ChevronUp className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                {/* Folder Selection Dropdown */}
+                <div className="mb-5">
+                  <label className="text-gray-300 text-sm font-medium mb-1.5 block">Project Folder</label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className={`w-full px-4 py-3 bg-gray-700 text-white rounded-lg flex justify-between items-center transition-colors ${folderError ? 'border border-red-500' : 'border border-gray-600'} ${isLoading || repoFolders.length === 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-650'}`}
+                      onClick={() => setShowFolderDropdown(!showFolderDropdown)}
+                      disabled={isLoading || repoFolders.length === 0}
+                    >
+                      <div className="flex items-center">
+                        <Folder className="w-5 h-5 mr-2 text-gray-400" />
+                        {selectedFolder || "Select a folder"}
+                      </div>
+                      {showFolderDropdown ? (
+                        <ChevronUp className="w-5 h-5 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                      )}
+                    </button>
+
+                    {showFolderDropdown && repoFolders.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-gray-700 rounded-lg shadow-xl border border-gray-600 max-h-60 overflow-y-auto">
+                        {repoFolders.map((folder, index) => (
+                          <div
+                            key={index}
+                            className="px-4 py-2.5 hover:bg-gray-600 cursor-pointer flex items-center transition-colors duration-150"
+                            onClick={() => {
+                              setSelectedFolder(folder);
+                              setShowFolderDropdown(false);
+                              setFolderError('');
+                            }}
+                          >
+                            <Folder className="w-4 h-4 mr-2 text-gray-400" />
+                            <span className={selectedFolder === folder ? 'font-medium text-blue-400' : 'text-white'}>
+                              {folder}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     )}
-                  </button>
+                  </div>
+                  {folderError && <p className="mt-1 text-sm text-red-400">{folderError}</p>}
 
-                  {showFolderDropdown && repoFolders.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-gray-700 rounded-lg shadow-xl border border-gray-600 max-h-60 overflow-y-auto">
-                      {repoFolders.map((folder, index) => (
-                        <div
-                          key={index}
-                          className="px-4 py-2.5 hover:bg-gray-600 cursor-pointer flex items-center transition-colors duration-150"
-                          onClick={() => {
-                            setSelectedFolder(folder);
-                            setShowFolderDropdown(false);
-                            setFolderError('');
-                          }}
-                        >
-                          <Folder className="w-4 h-4 mr-2 text-gray-400" />
-                          <span className={selectedFolder === folder ? 'font-medium text-blue-400' : 'text-white'}>
-                            {folder}
-                          </span>
-                        </div>
-                      ))}
+                  {isFetchingFolders && (
+                    <div className="flex items-center mt-2 text-sm text-gray-400">
+                      <Loader2 className="animate-spin w-4 h-4 mr-2" />
+                      <span>Fetching folders...</span>
                     </div>
                   )}
                 </div>
-                {folderError && (
-                  <p className="mt-1 text-sm text-red-400">{folderError}</p>
-                )}
-
-                {isFetchingFolders && (
-                  <div className="flex items-center mt-2 text-sm text-gray-400">
-                    <Loader2 className="animate-spin w-4 h-4 mr-2" />
-                    <span>Fetching folders...</span>
-                  </div>
-                )}
               </div>
 
-              {/* Deploy Button */}
-              <button
-                onClick={handleDeploy}
-                disabled={!githubUrl || !selectedFolder || isLoading || !!urlError || !!folderError}
-                className="w-full py-3.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 font-medium flex justify-center items-center shadow-lg"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="animate-spin w-5 h-5 mr-2" />
-                    <span>Deploying...</span>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-5 h-5 mr-2" />
-                    <span>Deploy Project</span>
-                  </>
-                )}
-              </button>
+              <div>
+                {/* Deploy Button */}
+                <button
+                  onClick={handleDeploy}
+                  disabled={!githubUrl || !selectedFolder || isLoading || !!urlError || !!folderError}
+                  className="w-full py-3.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 font-medium flex justify-center items-center shadow-lg"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="animate-spin w-5 h-5 mr-2" />
+                      <span>Deploying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5 mr-2" />
+                      <span>Deploy Project</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Deployment Status */}
@@ -476,19 +471,20 @@ const App: React.FC = () => {
 
           {/* Right Side - Terminal Logs */}
           {deploymentStatus && (
-            <div className="flex-1 h-full">
-              <div className="bg-gray-750 rounded-lg p-5 border border-gray-700 shadow-lg h-full">
+            <div className="flex-1">
+              <div className="h-full bg-gray-750 rounded-lg p-5 border border-gray-700 shadow-lg flex flex-col">
                 <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
                   <Terminal className="w-5 h-5 mr-2 text-blue-400" />
                   Deployment Logs
                 </h2>
-                <div className="h-96">
+                <div className="flex-1 overflow-auto">
                   <TerminalUI termLogs={termLogs} />
                 </div>
               </div>
             </div>
           )}
         </div>
+
       </div>
 
       {/* Deployment Success Modal */}
