@@ -151,17 +151,17 @@ app.get('/repo-folders', async (req, res) => {
 
 
 app.post('/', async (req, res) => {
-    if (!req.body.gitURL) {
+    if (!req.body.gitURL || !req.body.selectedFolder) {
         return res.json({
             status: 'error',
-            data: { errorMSG: 'please pass GIT URL as gitURL in body' }
+            data: { errorMSG: 'gitURL OR selectedFolder missing in req body' }
         });
     }
 
     console.log('Request received');
 
     const projectSlug = generateSlug();
-    const { gitURL } = req.body;
+    const { gitURL, selectedFolder } = req.body;
 
     // Spin the container 
     const command = new RunTaskCommand({
@@ -179,7 +179,7 @@ app.post('/', async (req, res) => {
         overrides: {
             containerOverrides: [{
                 name: AWS_ECR_IMAGE,
-                environment: [{ name: 'GIT_URL', value: gitURL }, { name: 'PROJECT_ID', value: projectSlug }]
+                environment: [{ name: 'GIT_URL', value: gitURL }, { name: 'GIT_ROOT', value: selectedFolder }, { name: 'PROJECT_ID', value: projectSlug }]
             }]
         }
     });
