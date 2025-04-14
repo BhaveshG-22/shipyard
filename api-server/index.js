@@ -29,6 +29,7 @@ const io = socketIO(server, {
 const PORT = process.env.PORT
 const BASE_URL = process.env.BASE_URL
 const REDIS_SERVICE_URL = process.env.REDIS_SERVICE_URL
+const S3_BUCKET = process.env.S3_BUCKET
 const AWS_REGION = process.env.AWS_REGION
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY
 const ACCESSKEY_KEY_ID = process.env.ACCESSKEY_KEY_ID
