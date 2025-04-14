@@ -236,10 +236,10 @@ const App: React.FC = () => {
       }
 
       setRepoFolders(data.folders || []);
-      // If the previously selected folder is not in the new list, default to the first one
-      if (data.folders.length > 0 && !data.folders.includes(selectedFolder)) {
-        setSelectedFolder(data.folders[0]);
-      }
+      // // If the previously selected folder is not in the new list, default to the first one
+      // if (data.folders.length > 0 && !data.folders.includes(selectedFolder)) {
+      //   setSelectedFolder(data.folders[0]);
+      // }
 
     } catch (error) {
       console.error('Error fetching repo folders:', error);
