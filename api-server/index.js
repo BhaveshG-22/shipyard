@@ -179,7 +179,17 @@ app.post('/', async (req, res) => {
         overrides: {
             containerOverrides: [{
                 name: AWS_ECR_IMAGE,
-                environment: [{ name: 'GIT_URL', value: gitURL }, { name: 'GIT_ROOT', value: folder }, { name: 'PROJECT_ID', value: projectSlug }]
+                environment: [
+                    { name: 'GIT_URL', value: gitURL },
+                    { name: 'GIT_ROOT', value: folder },
+                    { name: 'REDIS_URI', value: REDIS_SERVICE_URL },
+                    { name: 'S3_BUCKET', value: S3_BUCKET },
+                    { name: 'ACCESS_KEY_ID', value: ACCESSKEY_KEY_ID },
+                    { name: 'SECRET_ACCESS_KEY', value: AWS_SECRET_ACCESS_KEY },
+                    { name: 'REGION', value: AWS_REGION },
+                    { name: 'PROJECT_ID', value: projectSlug },
+                    { name: 'REVERSE_PROXY_URL', value: BASE_URL },
+                ]
             }]
         }
     });
